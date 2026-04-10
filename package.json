@@ -1,0 +1,24 @@
+{
+  "name": "real-estate-listing-helper",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "step": "tsx scripts/run-step.ts",
+    "build": "tsc"
+  },
+  "keywords": [],
+  "author": "Jonathan Alphonso",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "playwright": "^1.59.1",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2"
+  }
+}
