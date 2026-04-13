@@ -71,50 +71,61 @@ async function main(): Promise<void> {
 
   // Launch browser
   const { context, page } = await launchBrowser({ debug });
+  let spreadsheetPath = '';
+  let failedStep: { number: number; name: string } | null = null;
 
-  // Create or reuse spreadsheet
-  const { filePath: spreadsheetPath } = await createWorkbook(address);
-  console.log(`[INFO] Spreadsheet: ${spreadsheetPath}\n`);
+  try {
+    // Create or reuse the single property CSV
+    const workbook = await createWorkbook(address);
+    spreadsheetPath = workbook.filePath;
+    console.log(`[INFO] ${workbook.created ? 'Created' : 'Reusing'} property CSV: ${spreadsheetPath}\n`);
 
-  const ctx: WorkflowContext = {
-    page,
-    context,
-    address,
-    spreadsheetPath,
-    data: {},
-    debug,
-  };
+    const ctx: WorkflowContext = {
+      page,
+      context,
+      address,
+      spreadsheetPath,
+      data: {},
+      debug,
+    };
 
-  // Run steps
-  for (let i = fromStep - 1; i < STEPS.length; i++) {
-    const step = STEPS[i]!;
-    const stepNum = i + 1;
+    // Run steps
+    for (let i = fromStep - 1; i < STEPS.length; i++) {
+      const step = STEPS[i]!;
+      const stepNum = i + 1;
 
-    console.log(`\n--- Step ${stepNum}/${STEPS.length}: ${step.name} ---`);
+      console.log(`\n--- Step ${stepNum}/${STEPS.length}: ${step.name} ---`);
 
-    try {
-      const stepModule: StepModule = await import(step.module);
-      await stepModule.run(ctx);
-      console.log(`--- Step ${stepNum} complete ---\n`);
-    } catch (error) {
-      console.error(`\n[ERROR] Step ${stepNum} (${step.name}) failed:`);
-      console.error(error);
+      try {
+        const stepModule: StepModule = await import(step.module);
+        await stepModule.run(ctx);
+        console.log(`--- Step ${stepNum} complete ---\n`);
+      } catch (error) {
+        failedStep = { number: stepNum, name: step.name };
+        console.error(`\n[ERROR] Step ${stepNum} (${step.name}) failed:`);
+        console.error(error);
 
-      // Save debug screenshot
-      await takeScreenshot(page, `error-step-${stepNum}`).catch(() => {});
+        await takeScreenshot(ctx.page, `error-step-${stepNum}`).catch(() => {});
 
-      console.log(`\nTo resume from this step, run:`);
-      console.log(`  npm run start -- "${address}" --from-step ${stepNum}${debug ? ' --debug' : ''}`);
-      break;
+        console.log(`\nTo resume from this step, run:`);
+        console.log(`  npm run start -- "${address}" --from-step ${stepNum}${debug ? ' --debug' : ''}`);
+        break;
+      }
     }
+
+    if (!failedStep) {
+      console.log('\n===========================================');
+      console.log('  Workflow complete!');
+      console.log(`  Property CSV: ${spreadsheetPath}`);
+      console.log('===========================================');
+    }
+  } finally {
+    await closeBrowser();
   }
 
-  console.log('\n===========================================');
-  console.log('  Workflow complete!');
-  console.log(`  Spreadsheet: ${spreadsheetPath}`);
-  console.log('===========================================');
-
-  await closeBrowser();
+  if (failedStep) {
+    process.exitCode = 1;
+  }
 }
 
 main().catch((error) => {

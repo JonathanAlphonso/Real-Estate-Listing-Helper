@@ -5,22 +5,21 @@ Playwright-based automation tool that gathers Ontario real estate property data 
 ## Project Overview
 
 This tool automates the workflow of creating a new real estate listing by:
-1. Logging into the TRREB realtor portal (manual login, script waits)
-2. Pulling property data from Realm (prior sales or comparables)
-3. Pulling legal/ownership data from Geowarehouse
-4. Letting the human review all data in an Excel spreadsheet
-5. Logging into SkySlope Forms (manual login, script waits)
-6. Creating a new listing transaction with Form 271 (Listing Agreement) and Form 290 (MLS Data Info)
-7. Auto-filling form fields from the spreadsheet
-8. Generating a one-line listing description (interactive — paste from claude.ai or accept template)
+1. Logging into the TRREB realtor portal and establishing the PropTx session.
+2. Pulling historical property data from Realm.
+3. Pulling legal and ownership data from Geowarehouse.
+4. Opening the property CSV for human review and edits.
+5. Logging into SkySlope Forms.
+6. Creating a listing file and adding Form 271 and Form 290.
+7. Filling SkySlope forms from reviewed CSV data plus derived/default values.
+8. Generating and writing a listing description back to the CSV and Form 290.
 
 ## Tech Stack
 
-- **TypeScript** with `tsx` for direct execution (no build step needed during dev)
-- **Playwright** in headed mode with persistent browser context (cookies survive between runs)
-- **ExcelJS** for spreadsheet read/write
-- **No API keys required** — description generation is interactive (user pastes from their Claude subscription or accepts the auto-generated template)
-- **ESM modules** (`"type": "module"` in package.json)
+- TypeScript with `tsx` for direct execution
+- Playwright in headed mode with a persistent browser profile
+- CSV-based state in `source,field,value` format
+- ESM modules (`"type": "module"`)
 
 ## Commands
 
@@ -28,89 +27,153 @@ This tool automates the workflow of creating a new real estate listing by:
 # Full workflow
 npm run start -- "123 Main St, Toronto, ON"
 
-# Resume from a specific step (1-8)
+# Resume from a specific step. Existing property data is reused.
 npm run start -- "123 Main St, Toronto, ON" --from-step 5
 
-# Run a single step in debug mode (opens Playwright Inspector)
+# Run a single step in debug mode
 npm run step -- <step-number> "123 Main St, Toronto, ON"
 
-# Full workflow with debug mode
-npm run start -- "123 Main St, Toronto, ON" --debug
+# Property-data-only flow (steps 1-3)
+npm run property-data -- "123 Main St, Toronto, ON"
 
-# Type-check
-npx tsc --noEmit
+# Tests and build
+npm test
+npm run build
 ```
 
-## Architecture
+## Data Model
 
-### Data Flow
+The canonical artifact for each property is:
+- `data/properties/<sanitized-address>/property-data.csv`
 
-The **spreadsheet** (`data/*.xlsx`) is the central data interchange artifact:
-- Steps 2-3 write data into it (Realm + Geowarehouse worksheets)
-- Step 4 opens it for human review/editing
-- Steps 7-8 read from it to fill forms and generate the description
+Schema:
+- `source,field,value`
 
-### Key Directories
+The `source` column separates concerns:
+- `property`
+- `realm`
+- `geowarehouse`
+- `generated`
 
-- `config/selectors/` — DOM selectors for each portal. **These are the most frequently edited files.** Selectors are placeholders until discovered via Playwright Inspector.
-- `config/field-mappings.ts` — Single source of truth mapping canonical field names to spreadsheet columns and SkySlope form selectors.
-- `config/urls.ts` — All portal base URLs.
-- `src/steps/` — Each step is an independent module exporting `async run(ctx)`. Steps can be run individually via `npm run step`.
-- `src/types/` — TypeScript interfaces for property data and workflow state.
+The `property` source now carries first-class fields used later by SkySlope:
+- `Property Address`
+- `City`
+- `Province`
+- `Postal Code`
+- `County`
+- `Seller Name`
+- `Seller Email`
+- `SkySlope File URL`
 
-### Workflow Steps
+Important invariants:
+- Reruns must reuse the existing property CSV.
+- Resume flows must not wipe previously gathered data or human edits.
+- New schema rows must be backfilled into older property CSVs when they are reused.
 
-| Step | File | What it does |
-|------|------|-------------|
-| 1 | `src/steps/01-portal-login.ts` | Opens TRREB portal, waits for manual login |
-| 2 | `src/steps/02-realm-search.ts` | Searches Realm for property, extracts prior sale or comparables |
-| 3 | `src/steps/03-geowarehouse.ts` | Looks up property in Geowarehouse (PIN, legal desc, owners) |
-| 4 | `src/steps/04-human-review.ts` | Opens spreadsheet in Excel, waits for user to press Enter |
-| 5 | `src/steps/05-skyslope-login.ts` | Opens SkySlope Forms, waits for manual login |
-| 6 | `src/steps/06-skyslope-add-forms.ts` | Creates transaction, adds Form 271 + Form 290 |
-| 7 | `src/steps/07-skyslope-fill.ts` | Fills form fields from spreadsheet data |
-| 8 | `src/steps/08-generate-description.ts` | Prompts for listing description (template suggestion + paste-your-own), saves to spreadsheet + form |
+## Core Files
 
-## Development Guidelines
+- `config/field-mappings.ts`: canonical field names to CSV columns and form selectors
+- `config/defaults.ts`: fallback values for Form 290
+- `config/selectors/`: portal selectors
+- `src/spreadsheet.ts`: CSV creation, reading, validation, and row replacement
+- `src/skyslope.ts`: shared SkySlope page-state helpers
+- `src/skyslope-data.ts`: address parsing, county inference, contact parsing, and normalized 290 value resolution
+- `src/steps/`: independent workflow steps
 
-### Selector Discovery
+## SkySlope State Model
 
-All DOM selectors in `config/selectors/` are placeholders. To discover real selectors:
+Treat SkySlope as an explicit page-state machine:
+- `/add-forms`
+- `/documents`
+- `/fill/envelope/...`
 
-1. Run a step with debug mode: `npm run step -- 2 "123 Main St"`
-2. Playwright Inspector opens — use it to find correct selectors
-3. Update the corresponding file in `config/selectors/`
-4. Re-run the step to verify
+Rules:
+- Step 6 must end on `/documents`.
+- Steps 7 and 8 must explicitly open the target form from `/documents`.
+- Do not assume the browser is already on the correct page because a previous step touched SkySlope.
+- Saving must return to `/documents`; if it does not, treat that as a failure.
 
-Prefer selectors in this order of resilience:
-1. `data-testid` attributes
-2. ARIA roles/labels (`page.getByRole(...)`)
-3. Text content (`page.getByText(...)`)
-4. CSS selectors (keep shallow)
+## Value Resolution Rules
 
-Use comma-separated fallback chains in selector strings for resilience.
+For Form 290, values are resolved in this order:
+1. Direct CSV value for the field's mapped column
+2. Derived value from related CSV fields
+3. Default value from `config/defaults.ts`
 
-### Adding New Form Fields
+Examples of derived values:
+- `garageType` from `Garage`
+- `garageParkingSpaces` from `Parking`
+- `driveway` and `drivewayParkingSpaces` from `Parking`
+- `approxSquareFootage` from `Square Footage`
+- `county` from inferred municipality or city
 
-1. Add the field to the relevant interface in `src/types/property-data.ts`
-2. Add extraction logic in the appropriate step (02 or 03)
-3. Add the mapping in `config/field-mappings.ts` (spreadsheet column + form selector key)
-4. Add the DOM selector in `config/selectors/skyslope.ts` under the relevant form
-5. The fill logic in step 07 will automatically pick it up from the mapping
+Do not add one-off parsing directly inside step logic when the behavior belongs in `src/skyslope-data.ts`.
 
-### Browser Context
+## Login Auto-Fill
 
-The browser uses a persistent context stored in `browser-profile/` (gitignored). This means:
-- Login sessions persist between runs — you won't need to re-login every time
-- To force a fresh session, delete the `browser-profile/` directory
+Every login step must attempt to auto-fill credentials from `.env` before falling back to manual login. Never leave login fields empty when environment variables are available. This applies to all portals (PropTx, SkySlope, and any future login steps).
 
-### Error Handling
+- `PROPTX_USERNAME` / `PROPTX_PASSWORD` for PropTx (Step 1). Note: PropTx requires SMS 2FA, so the script fills credentials then waits for the user to complete 2FA.
+- `SKYSLOPE_EMAIL` / `SKYSLOPE_PASSWORD` for SkySlope (Step 5).
+
+When adding new login steps, follow the same pattern: try env-var auto-fill first, then fall back to waiting for manual login.
+
+## Error Handling
 
 When a step fails:
-- A debug screenshot is saved to `data/debug/`
-- The console shows the exact `--from-step` command to resume
-- Fix the issue (usually a selector) and re-run from that step
+- Save a debug screenshot under `artifacts/images/`
+- Exit non-zero
+- Print the exact `--from-step` command to resume
+
+Do not print `Workflow complete!` after a failed step.
 
 ## Environment Variables
 
-No API keys or environment variables are required. The listing description in step 8 is interactive — the script generates a template suggestion and prints all property details so you can paste them into claude.ai to get a polished description.
+Commonly used:
+- `SKYSLOPE_EMAIL`
+- `SKYSLOPE_PASSWORD`
+
+Optional create-file fallbacks:
+- `SKYSLOPE_CLIENT_EMAIL`
+- `SKYSLOPE_DEFAULT_COUNTY`
+- `BROWSER_PROFILE_DIR`
+
+Artifact locations:
+- Images are written to `artifacts/images/`
+- Browser profiles and saved auth state are written to `artifacts/browser-data/` by default
+
+Description generation remains interactive and does not require an API key.
+
+## Form Notes
+
+### Form 290
+
+- The main automation target.
+- Uses a mix of text inputs and checkbox mappings.
+- Text fields are written via controlled-input event dispatch, not plain `fill()` when persistence depends on React dirty tracking.
+
+### Form 271
+
+- Opened explicitly from the documents page.
+- The live editor currently auto-populates the key seller and address content from file creation.
+- Step 7 now verifies that prepopulation and only fills the fields that are still editable.
+
+## Verification Expectations
+
+After modifying live-form automation:
+1. Run the relevant step or flow against the real portal.
+2. Capture screenshots.
+3. Confirm the browser actually transitioned through the expected SkySlope states.
+4. Do not trust DOM writes alone; verify save/navigation behavior.
+
+### Form 290 description caveat
+The current live 290 editor did not expose an editable description field during verification.
+Step 8 still writes the generated description to the canonical CSV and attempts to find a real field in the editor.
+If no such field exists, it leaves the form unchanged, captures a screenshot, and exits cleanly instead of failing.
+
+## Development Guidance
+
+- Prefer adding normalization in `src/skyslope-data.ts` over scattering string parsing across steps.
+- Prefer adding selectors in config over embedding raw selectors in step files.
+- Keep CSV writes source-scoped. Do not mix property, realm, and geowarehouse rows casually.
+- If a live portal changes, update selectors or page-state helpers first, then the step logic.

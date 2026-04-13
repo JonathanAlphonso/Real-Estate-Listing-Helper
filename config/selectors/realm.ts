@@ -5,8 +5,11 @@
 
 export const realmSelectors = {
   // Post-login / navigation
-  postLoginIndicator: '.user-greeting__greeting, button.search-properties__search, a[href*="app.realmmlp.ca/auth/amp"]',
+  postLoginIndicator:
+    '.user-greeting__greeting, button.search-properties__search, a[href*="app.realmmlp.ca/auth/amp"], text=My Market Areas, text=Recent Searches',
   openSearchButton: 'button[aria-label="Open search"]',
+  memberAccessButton:
+    'div:has(p:text-is("Member")) button, div:has(img[alt*="Toronto Regional Real Estate Board"]) button',
 
   // Global search dialog
   searchInput: 'input[placeholder*="street address"], input[placeholder*="MLS#"], input[placeholder*="Search"]',

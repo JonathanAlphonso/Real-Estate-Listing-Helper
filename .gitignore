@@ -1,11 +1,12 @@
 node_modules/
 dist/
+.claude/
 data/*
 !data/.gitkeep
-!data/debug/
-data/debug/*
-!data/debug/.gitkeep
+artifacts/
 .env
-browser-profile/
 *.log
 .playwright-mcp/
+browser-profile/
+browser-profile-verify*/
+*.png

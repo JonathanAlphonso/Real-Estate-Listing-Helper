@@ -21,7 +21,7 @@ export interface RealmData {
   style?: string;
   bedrooms: number;
   bathrooms: number;
-  squareFootage?: number;
+  squareFootage?: string;
   lotFrontage?: string;
   lotDepth?: string;
   lotSize?: string;
@@ -63,6 +63,9 @@ export interface PropertyData {
   city: string;
   province: string;
   postalCode: string;
+  county?: string;
+  sellerName?: string;
+  sellerEmail?: string;
 
   // Realm data
   realm: RealmData;

@@ -1,16 +1,34 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export const DATA_DIR = path.join(__dirname, '..', 'data');
-export const DEBUG_DIR = path.join(DATA_DIR, 'debug');
+// Load .env from project root
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
-export function ensureDataDirectories(): { dataDir: string; debugDir: string } {
+export const DATA_DIR = path.join(__dirname, '..', 'data');
+export const ARTIFACTS_DIR = path.join(__dirname, '..', 'artifacts');
+export const IMAGES_DIR = path.join(ARTIFACTS_DIR, 'images');
+export const BROWSER_DATA_DIR = path.join(ARTIFACTS_DIR, 'browser-data');
+
+export function ensureDataDirectories(): {
+  dataDir: string;
+  artifactsDir: string;
+  imagesDir: string;
+  browserDataDir: string;
+} {
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.mkdirSync(DEBUG_DIR, { recursive: true });
-  return { dataDir: DATA_DIR, debugDir: DEBUG_DIR };
+  fs.mkdirSync(ARTIFACTS_DIR, { recursive: true });
+  fs.mkdirSync(IMAGES_DIR, { recursive: true });
+  fs.mkdirSync(BROWSER_DATA_DIR, { recursive: true });
+  return {
+    dataDir: DATA_DIR,
+    artifactsDir: ARTIFACTS_DIR,
+    imagesDir: IMAGES_DIR,
+    browserDataDir: BROWSER_DATA_DIR,
+  };
 }
 
 export function validateAddress(address: string): string {

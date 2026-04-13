@@ -1,30 +1,7 @@
-import readline from 'readline';
-
 export async function generateListingDescription(
   propertyData: Record<string, string>,
 ): Promise<string> {
-  // Generate a template-based suggestion
-  const suggestion = generateTemplateSuggestion(propertyData);
-
-  console.log('\n========================================');
-  console.log('  LISTING DESCRIPTION');
-  console.log('========================================');
-  console.log(`\nSuggested description:\n  "${suggestion}"\n`);
-  console.log('Options:');
-  console.log('  1. Press ENTER to use the suggestion above');
-  console.log('  2. Paste your own description and press ENTER');
-  console.log('');
-  console.log('Tip: Copy the property details below into Claude (claude.ai)');
-  console.log('and ask it to write a one-line MLS listing description:\n');
-  console.log('--- Copy from here ---');
-  for (const [key, value] of Object.entries(propertyData)) {
-    if (value) console.log(`${key}: ${value}`);
-  }
-  console.log('--- End copy ---\n');
-
-  const userInput = await promptForInput('Description: ');
-
-  return userInput.trim() || suggestion;
+  return generateTemplateSuggestion(propertyData);
 }
 
 function generateTemplateSuggestion(data: Record<string, string>): string {
@@ -57,18 +34,4 @@ function generateTemplateSuggestion(data: Record<string, string>): string {
   return parts.length > 1
     ? `Welcome to this beautiful ${parts.join(', ')}.`
     : 'Beautiful property in a desirable location.';
-}
-
-function promptForInput(prompt: string): Promise<string> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise((resolve) => {
-    rl.question(prompt, (answer: string) => {
-      rl.close();
-      resolve(answer);
-    });
-  });
 }

@@ -18,7 +18,7 @@ const STEP_MODULES: Record<string, string> = {
 const STEPS_REQUIRING_ADDRESS = new Set(['1', '2', '3']);
 
 function printUsage(): void {
-  console.error('Usage: npm run step -- <step-number> ["123 Main St, Toronto, ON"] [--spreadsheet data\\file.xlsx]');
+  console.error('Usage: npm run step -- <step-number> ["123 Main St, Toronto, ON"] [--spreadsheet data\\properties\\<property>\\property-data.csv]');
   console.error('Steps: 1-8');
   console.error('\n  1: Portal Login');
   console.error('  2: Realm Search');
@@ -80,49 +80,52 @@ async function main(): Promise<void> {
   ensureDataDirectories();
 
   if (providedSpreadsheetPath && !fs.existsSync(providedSpreadsheetPath)) {
-    console.error(`Spreadsheet not found: ${providedSpreadsheetPath}`);
+    console.error(`Property CSV not found: ${providedSpreadsheetPath}`);
     process.exit(1);
   }
 
   const { context, page } = await launchBrowser({ debug: true });
-  const spreadsheetPath = providedSpreadsheetPath ?? (await createWorkbook(address)).filePath;
-  const resolvedAddress = address || (providedSpreadsheetPath
-    ? await readAddressFromSpreadsheet(providedSpreadsheetPath)
-    : undefined) || '';
-
-  if (stepNum === '6' && !resolvedAddress) {
-    console.error('Step 6 requires a property address. Pass it explicitly or provide a spreadsheet with Property Address populated.');
-    await closeBrowser();
-    process.exit(1);
-  }
-
-  if (providedSpreadsheetPath) {
-    console.log(`[INFO] Reusing spreadsheet: ${spreadsheetPath}`);
-  } else {
-    console.log(`[INFO] Created spreadsheet: ${spreadsheetPath}`);
-  }
-
-  const ctx: WorkflowContext = {
-    page,
-    context,
-    address: resolvedAddress,
-    spreadsheetPath,
-    data: {},
-    debug: true,
-  };
-
-  console.log(`Running step ${stepNum} with debug mode ON...`);
-  console.log(`Spreadsheet: ${spreadsheetPath}\n`);
 
   try {
-    const stepModule: StepModule = await import(STEP_MODULES[stepNum]!);
-    await stepModule.run(ctx);
-    console.log('\nStep completed successfully.');
-  } catch (error) {
-    console.error('\nStep failed:', error);
-  }
+    const workbook = providedSpreadsheetPath
+      ? { filePath: providedSpreadsheetPath, created: false }
+      : await createWorkbook(address);
+    const spreadsheetPath = workbook.filePath;
+    const resolvedAddress = address || (providedSpreadsheetPath
+      ? await readAddressFromSpreadsheet(providedSpreadsheetPath)
+      : undefined) || '';
 
-  await closeBrowser();
+    if (stepNum === '6' && !resolvedAddress) {
+      console.error('Step 6 requires a property address. Pass it explicitly or provide a property CSV with Property Address populated.');
+      process.exitCode = 1;
+      return;
+    }
+
+    console.log(`[INFO] ${workbook.created ? 'Created' : 'Reusing'} property CSV: ${spreadsheetPath}`);
+
+    const ctx: WorkflowContext = {
+      page,
+      context,
+      address: resolvedAddress,
+      spreadsheetPath,
+      data: {},
+      debug: true,
+    };
+
+    console.log(`Running step ${stepNum} with debug mode ON...`);
+    console.log(`Property CSV: ${spreadsheetPath}\n`);
+
+    try {
+      const stepModule: StepModule = await import(STEP_MODULES[stepNum]!);
+      await stepModule.run(ctx);
+      console.log('\nStep completed successfully.');
+    } catch (error) {
+      console.error('\nStep failed:', error);
+      process.exitCode = 1;
+    }
+  } finally {
+    await closeBrowser();
+  }
 }
 
 main().catch((error) => {
